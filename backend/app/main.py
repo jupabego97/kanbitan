@@ -1,19 +1,30 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from app.alegra import AlegraError, sync_catalog
 from app.core.config import get_settings
 from app.db import create_development_schema, engine, get_session
-from app.models import PurchaseRequest, RequestEvent, RequestPriority, RequestStatus, Supplier
+from app.models import (
+    CatalogSyncState,
+    Product,
+    PurchaseRequest,
+    RequestEvent,
+    RequestPriority,
+    RequestStatus,
+    Supplier,
+)
 from app.schemas import (
     DashboardMetrics,
+    CatalogSyncRead,
     ProductRead,
     PurchaseRequestCreate,
     PurchaseRequestList,
@@ -59,7 +70,7 @@ app.add_middleware(
     allow_origins=[origin.strip() for origin in settings.frontend_origin.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Catalog-Sync-Secret"],
 )
 
 
@@ -72,6 +83,7 @@ def request_read(request: PurchaseRequest, suppliers: dict[UUID, Supplier]) -> P
         supplier_id=request.supplier_id,
         supplier_name=supplier.name if supplier else None,
         quantity=request.quantity,
+        request_kind=request.request_kind,
         priority=request.priority,
         status=request.status,
         customer_contact=request.customer_contact,
@@ -91,6 +103,36 @@ def supplier_lookup(session: Session, requests: list[PurchaseRequest]) -> dict[U
     return {supplier.id: supplier for supplier in suppliers}
 
 
+def catalog_stale(session: Session) -> bool:
+    state = session.get(CatalogSyncState, 1)
+    if state is None or state.last_success_at is None:
+        return True
+    return datetime.now(UTC) - state.last_success_at > timedelta(minutes=max(settings.catalog_ttl_minutes, 1))
+
+
+def sync_if_needed(session: Session) -> tuple[bool, str | None]:
+    if not catalog_stale(session):
+        return False, None
+    try:
+        sync_catalog_sync(session)
+        return True, None
+    except AlegraError as exc:
+        if not settings.alegra_configured:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "catalog_unavailable", "message": str(exc)},
+            ) from exc
+        if session.exec(select(Product).where(Product.is_active.is_(True))).first() is not None:
+            return False, str(exc)
+        raise HTTPException(status_code=503, detail={"code": "catalog_unavailable", "message": str(exc)}) from exc
+
+
+def sync_catalog_sync(session: Session) -> dict:
+    import asyncio
+
+    return asyncio.run(sync_catalog(session, settings))
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "kanbitan-api"}
@@ -103,18 +145,44 @@ def list_suppliers(session: SessionDependency) -> list[Supplier]:
     ).all()
 
 
-@app.get("/api/v1/products", response_model=list[ProductRead])
-def list_products(
+@app.get("/api/v1/catalog/search", response_model=list[ProductRead])
+def search_catalog(
+    response: Response,
     session: SessionDependency,
     query: str = Query(default="", min_length=0, max_length=100),
-) -> list[ProductRead]:
-    from app.models import Product
-
-    statement = select(Product).order_by(Product.name).limit(12)
-    if query.strip():
-        pattern = f"%{query.strip()}%"
-        statement = statement.where(Product.name.ilike(pattern) | Product.sku.ilike(pattern))
+) -> list[Product]:
+    _, sync_error = sync_if_needed(session)
+    if sync_error:
+        response.headers["X-Catalog-Stale"] = "true"
+        response.headers["X-Catalog-Error"] = sync_error[:160]
+    term = query.strip()
+    statement = select(Product).where(Product.is_active.is_(True)).order_by(Product.name).limit(20)
+    if term:
+        normalized = term.replace(" ", "")
+        pattern = f"%{term}%"
+        statement = statement.where(
+            (Product.name.ilike(pattern))
+            | (Product.sku.ilike(pattern))
+            | (Product.barcode == normalized)
+            | (Product.sku == normalized)
+        )
     return list(session.exec(statement).all())
+
+
+@app.post("/api/v1/catalog/sync", response_model=CatalogSyncRead)
+def trigger_catalog_sync(
+    session: SessionDependency,
+    x_catalog_sync_secret: str | None = Header(default=None),
+) -> CatalogSyncRead:
+    if not settings.catalog_sync_secret or not x_catalog_sync_secret or not secrets.compare_digest(
+        x_catalog_sync_secret, settings.catalog_sync_secret
+    ):
+        raise HTTPException(status_code=401, detail="Credencial de sincronización inválida.")
+    try:
+        result = sync_catalog_sync(session)
+    except AlegraError as exc:
+        raise HTTPException(status_code=502, detail={"code": "alegra_error", "message": str(exc)}) from exc
+    return CatalogSyncRead(**result)
 
 
 @app.get("/api/v1/requests", response_model=PurchaseRequestList)
@@ -158,6 +226,10 @@ def list_requests(
 def create_request(payload: PurchaseRequestCreate, session: SessionDependency) -> PurchaseRequestRead:
     if payload.supplier_id and not session.get(Supplier, payload.supplier_id):
         raise HTTPException(status_code=422, detail="El proveedor seleccionado no existe.")
+    if payload.product_id:
+        product = session.get(Product, payload.product_id)
+        if not product or not product.is_active:
+            raise HTTPException(status_code=422, detail="El producto seleccionado no está disponible.")
 
     request = PurchaseRequest(
         **payload.model_dump(), status=RequestStatus.INTAKE, updated_at=datetime.now(UTC)

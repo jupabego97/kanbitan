@@ -1,5 +1,5 @@
-import { KanbanDashboard } from "@/components/kanban-dashboard";
+import { CounterScreen } from "@/components/counter-screen";
 
 export default function Home() {
-  return <KanbanDashboard />;
+  return <CounterScreen />;
 }

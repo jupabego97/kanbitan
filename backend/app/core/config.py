@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./kanbitan.db"
     frontend_origin: str = "http://localhost:3000"
     app_name: str = "Kanbitan API"
+    alegra_user: str = ""
+    alegra_token: str = ""
+    alegra_base_url: str = "https://api.alegra.com/api/v1"
+    catalog_sync_secret: str = ""
+    catalog_ttl_minutes: int = 15
+
+    @property
+    def alegra_configured(self) -> bool:
+        return bool(self.alegra_user.strip() and self.alegra_token.strip())
 
     @property
     def sqlalchemy_database_url(self) -> str:

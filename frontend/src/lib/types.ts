@@ -7,17 +7,23 @@ export type RequestStatus =
   | "cancelled";
 
 export type RequestPriority = "urgent" | "high" | "normal" | "low";
+export type RequestKind = "out_of_stock" | "new_product";
 
 export type Product = {
   id: string;
+  alegra_id: string;
   name: string;
   sku: string | null;
   barcode: string | null;
+  inventory_quantity: number | null;
+  inventory_enabled: boolean;
+  last_synced_at: string;
   preferred_supplier_id: string | null;
 };
 
 export type Supplier = {
   id: string;
+  alegra_id?: string | null;
   name: string;
   lead_time_days: number | null;
 };
@@ -28,6 +34,7 @@ export type PurchaseRequest = {
   supplier_id: string | null;
   supplier_name: string | null;
   quantity: number;
+  request_kind?: RequestKind;
   priority: RequestPriority;
   status: RequestStatus;
   customer_contact: string | null;
@@ -43,6 +50,7 @@ export type PurchaseRequestDraft = {
   product_id?: string | null;
   supplier_id?: string | null;
   quantity: number;
+  request_kind?: RequestKind;
   priority: RequestPriority;
   customer_contact?: string | null;
   note?: string | null;

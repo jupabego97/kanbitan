@@ -4,21 +4,34 @@ from datetime import datetime
 from pydantic import ConfigDict
 from sqlmodel import Field, SQLModel
 
-from app.models import RequestPriority, RequestStatus
+from app.models import RequestKind, RequestPriority, RequestStatus
 
 
 class SupplierRead(SQLModel):
     id: uuid.UUID
+    alegra_id: str | None
     name: str
     lead_time_days: int | None
 
 
 class ProductRead(SQLModel):
     id: uuid.UUID
+    alegra_id: str
     name: str
     sku: str | None
     barcode: str | None
+    inventory_quantity: float | None
+    inventory_enabled: bool
+    last_synced_at: datetime
     preferred_supplier_id: uuid.UUID | None
+
+
+class CatalogSyncRead(SQLModel):
+    status: str
+    item_count: int
+    last_success_at: datetime | None
+    stale: bool
+    message: str | None = None
 
 
 class PurchaseRequestCreate(SQLModel):
@@ -26,6 +39,7 @@ class PurchaseRequestCreate(SQLModel):
     product_id: uuid.UUID | None = None
     supplier_id: uuid.UUID | None = None
     quantity: int = Field(default=1, ge=1, le=100_000)
+    request_kind: RequestKind = RequestKind.OUT_OF_STOCK
     priority: RequestPriority = RequestPriority.NORMAL
     customer_contact: str | None = Field(default=None, max_length=120)
     note: str | None = Field(default=None, max_length=1_000)
@@ -48,6 +62,7 @@ class PurchaseRequestRead(SQLModel):
     supplier_id: uuid.UUID | None
     supplier_name: str | None
     quantity: int
+    request_kind: RequestKind
     priority: RequestPriority
     status: RequestStatus
     customer_contact: str | None

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -59,7 +60,7 @@ import {
   type Supplier,
 } from "@/lib/types";
 
-type Mode = "loading" | "demo" | "live";
+type Mode = "loading" | "demo" | "live" | "error";
 type FilterTab = "all" | "triage" | "urgent" | "mine";
 type FormState = {
   title: string;
@@ -380,11 +381,18 @@ export function KanbanDashboard() {
       setMode("live");
       if (showRefresh) setToast("Datos actualizados");
     } catch {
-      setRequests(demoRequests);
-      setSuppliers(demoSuppliers);
-      setMetrics(demoMetrics);
-      setMode("demo");
-      if (showRefresh) setToast("No se pudo conectar; estás viendo datos de demostración");
+      if (process.env.NODE_ENV === "production") {
+        setRequests([]);
+        setSuppliers([]);
+        setMetrics({ total_open: 0, urgent_open: 0, ordered: 0, received_this_week: 0, average_lead_time_days: null });
+        setMode("error");
+      } else {
+        setRequests(demoRequests);
+        setSuppliers(demoSuppliers);
+        setMetrics(demoMetrics);
+        setMode("demo");
+      }
+      if (showRefresh) setToast(process.env.NODE_ENV === "production" ? "No se pudo conectar con la API" : "No se pudo conectar; estás viendo datos de demostración");
     } finally {
       setIsRefreshing(false);
     }
@@ -562,9 +570,10 @@ export function KanbanDashboard() {
         <div className="flex-1 px-3 py-5">
           <p className="px-3 text-[10px] font-bold uppercase tracking-[0.13em] text-[#98a2b3]">Workspace</p>
           <nav className="mt-2 space-y-1" aria-label="Navegación principal">
-            <button className="flex w-full items-center gap-3 rounded-xl bg-[#eef4ff] px-3 py-2.5 text-left text-sm font-bold text-[#175cd3]" aria-current="page">
+            <Link href="/tablero" className="flex w-full items-center gap-3 rounded-xl bg-[#eef4ff] px-3 py-2.5 text-left text-sm font-bold text-[#175cd3]" aria-current="page">
               <LayoutGrid className="h-[17px] w-[17px]" /> Pedidos <span className="ml-auto rounded-full bg-[#dce9ff] px-2 py-0.5 text-[10px]">{metricsForView.total_open}</span>
-            </button>
+            </Link>
+            <Link href="/" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085] transition hover:bg-[#f9fafb] hover:text-[#344054]"><Package className="h-[17px] w-[17px]" /> Mostrador</Link>
             <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085] transition hover:bg-[#f9fafb] hover:text-[#344054]">
               <Package className="h-[17px] w-[17px]" /> Inventario
             </button>
@@ -601,7 +610,7 @@ export function KanbanDashboard() {
                 <Menu className="h-4 w-4" />
               </button>
               <div className="min-w-0">
-                <div className="flex items-center gap-2"><h1 className="truncate text-lg font-bold tracking-[-0.04em] text-[#101828]">Pedidos</h1><Badge className={mode === "live" ? "border-[#abefc6] bg-[#ecfdf3] text-[#027a48]" : "border-[#fedf89] bg-[#fffaeb] text-[#b54708]"}>{mode === "loading" ? "Cargando" : mode === "live" ? "En vivo" : "Demo"}</Badge></div>
+                <div className="flex items-center gap-2"><h1 className="truncate text-lg font-bold tracking-[-0.04em] text-[#101828]">Pedidos</h1><Badge className={mode === "live" ? "border-[#abefc6] bg-[#ecfdf3] text-[#027a48]" : mode === "error" ? "border-[#fecdca] bg-[#fff1f0] text-[#b42318]" : "border-[#fedf89] bg-[#fffaeb] text-[#b54708]"}>{mode === "loading" ? "Cargando" : mode === "live" ? "En vivo" : mode === "error" ? "Sin conexión" : "Demo"}</Badge></div>
                 <p className="hidden text-xs text-[#98a2b3] sm:block">Todo lo que falta, listo para avanzar.</p>
               </div>
             </div>
@@ -621,6 +630,7 @@ export function KanbanDashboard() {
         </header>
 
         <main className="mx-auto max-w-[1680px] px-4 py-6 sm:px-7 sm:py-8">
+          {mode === "error" && <div role="alert" className="mb-6 flex flex-col gap-3 rounded-2xl border border-[#fecdca] bg-[#fff1f0] p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold text-[#b42318]">No pudimos conectar con la API</p><p className="mt-1 text-xs text-[#b42318]">Comprueba el servicio backend y las variables de Railway para continuar.</p></div><Button size="sm" onClick={() => void loadData(true)}>Reintentar</Button></div>}
           <section className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div><p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.13em] text-[#175cd3]"><Sparkles className="h-3.5 w-3.5" /> Miércoles, 16 de julio</p><h2 className="text-[30px] font-extrabold tracking-[-0.06em] text-[#101828] sm:text-[36px]">Centro de compras</h2><p className="mt-2 max-w-xl text-sm leading-6 text-[#667085]">Una vista clara del inventario que pide atención y de las compras que ya están avanzando.</p></div>
             <Button variant="outline" onClick={() => setView(view === "board" ? "list" : "board")}><span className="text-[#175cd3]">{view === "board" ? <ListFilter className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}</span>{view === "board" ? "Vista lista" : "Vista tablero"}</Button>
@@ -652,7 +662,7 @@ export function KanbanDashboard() {
         </main>
       </div>
 
-      {mobileNavOpen && <div className="fixed inset-0 z-40 bg-[#101828]/30 lg:hidden" role="presentation" onClick={() => setMobileNavOpen(false)}><aside className="h-full w-[280px] border-r border-[#eaecf0] bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="mb-8 flex items-center justify-between px-2"><div className="flex items-center gap-2"><div className="grid h-8 w-8 place-items-center rounded-lg bg-[#155eef] text-white"><Zap className="h-4 w-4 fill-current" /></div><span className="font-extrabold tracking-[-0.04em]">kanbitan</span></div><button onClick={() => setMobileNavOpen(false)} className="grid h-8 w-8 place-items-center rounded-lg text-[#98a2b3] hover:bg-[#f2f4f7]" aria-label="Cerrar menú"><X className="h-4 w-4" /></button></div><p className="px-2 text-[10px] font-bold uppercase tracking-[0.13em] text-[#98a2b3]">Workspace</p><nav className="mt-2 space-y-1"><button onClick={() => setMobileNavOpen(false)} className="flex w-full items-center gap-3 rounded-xl bg-[#eef4ff] px-3 py-2.5 text-left text-sm font-bold text-[#175cd3]"><LayoutGrid className="h-[17px] w-[17px]" /> Pedidos</button><button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085]"><Package className="h-[17px] w-[17px]" /> Inventario</button><button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085]"><Store className="h-[17px] w-[17px]" /> Proveedores</button></nav></aside></div>}
+      {mobileNavOpen && <div className="fixed inset-0 z-40 bg-[#101828]/30 lg:hidden" role="presentation" onClick={() => setMobileNavOpen(false)}><aside className="h-full w-[280px] border-r border-[#eaecf0] bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="mb-8 flex items-center justify-between px-2"><div className="flex items-center gap-2"><div className="grid h-8 w-8 place-items-center rounded-lg bg-[#155eef] text-white"><Zap className="h-4 w-4 fill-current" /></div><span className="font-extrabold tracking-[-0.04em]">kanbitan</span></div><button onClick={() => setMobileNavOpen(false)} className="grid h-8 w-8 place-items-center rounded-lg text-[#98a2b3] hover:bg-[#f2f4f7]" aria-label="Cerrar menú"><X className="h-4 w-4" /></button></div><p className="px-2 text-[10px] font-bold uppercase tracking-[0.13em] text-[#98a2b3]">Workspace</p><nav className="mt-2 space-y-1"><Link href="/tablero" onClick={() => setMobileNavOpen(false)} className="flex w-full items-center gap-3 rounded-xl bg-[#eef4ff] px-3 py-2.5 text-left text-sm font-bold text-[#175cd3]"><LayoutGrid className="h-[17px] w-[17px]" /> Pedidos</Link><Link href="/" onClick={() => setMobileNavOpen(false)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085]"><Package className="h-[17px] w-[17px]" /> Mostrador</Link><button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085]"><Store className="h-[17px] w-[17px]" /> Proveedores</button></nav></aside></div>}
 
       {toast && <div role="status" className="fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-xl border border-[#344054] bg-[#101828] px-4 py-3 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(16,24,40,.25)]"><Check className="h-4 w-4 text-[#6ce9a6]" />{toast}</div>}
 

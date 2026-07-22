@@ -26,9 +26,9 @@ def seed_development_data(session: Session) -> None:
     session.flush()
 
     products = [
-        Product(name="Memoria MicroSD 128 GB", sku="MSD-128", preferred_supplier_id=suppliers[0].id),
-        Product(name="Cable USB-C trenzado 2 m", sku="CAB-USBC-2", preferred_supplier_id=suppliers[2].id),
-        Product(name="Cargador GaN 65 W", sku="GAN-65", preferred_supplier_id=suppliers[1].id),
+        Product(alegra_id="demo-msd-128", name="Memoria MicroSD 128 GB", sku="MSD-128", preferred_supplier_id=suppliers[0].id),
+        Product(alegra_id="demo-cab-usbc-2", name="Cable USB-C trenzado 2 m", sku="CAB-USBC-2", preferred_supplier_id=suppliers[2].id),
+        Product(alegra_id="demo-gan-65", name="Cargador GaN 65 W", sku="GAN-65", preferred_supplier_id=suppliers[1].id),
     ]
     session.add_all(products)
     session.flush()

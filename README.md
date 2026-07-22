@@ -8,7 +8,8 @@ Kanbitan convierte faltantes de mostrador en compras que avanzan. Es una consola
 - Vista de lista, búsqueda instantánea, filtros por prioridad y proveedor.
 - Alta rápida con cantidad, contacto, proveedor y contexto.
 - Detalle de solicitud con timeline de actividad y acceso a WhatsApp.
-- Modo demo automático cuando la API aún no está levantada; no bloquea la exploración de la UI.
+- Mostrador de entrada con búsqueda por nombre, referencia y código de barras desde Alegra.
+- Tablero operativo separado en `/tablero`, con historial auditable de cada solicitud.
 - API con transiciones de estado explícitas y eventos inmutables por solicitud.
 - Migraciones Alembic separadas del proceso HTTP; SQLite sólo para desarrollo local.
 
@@ -40,7 +41,7 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Abre `http://localhost:3000`. Sin API disponible, la interfaz inicia en modo demo. Con API disponible, define `NEXT_PUBLIC_API_URL=http://localhost:8000`.
+Abre `http://localhost:3000`. Define `NEXT_PUBLIC_API_URL=http://localhost:8000` para conectar el frontend con la API. El modo demo sólo se mantiene para desarrollo local.
 
 ## PostgreSQL y Railway
 
@@ -49,9 +50,10 @@ En local puedes levantar PostgreSQL con `docker compose up -d postgres` y config
 En Railway:
 
 1. Crea un servicio PostgreSQL y un servicio para `backend/`.
-2. Define `ENVIRONMENT=production`, `DATABASE_URL` y `FRONTEND_ORIGIN`.
+2. Define `ENVIRONMENT=production`, `DATABASE_URL`, `FRONTEND_ORIGIN`, `ALEGRA_USER`, `ALEGRA_TOKEN` y `CATALOG_SYNC_SECRET` en el servicio API. Las credenciales de Alegra sólo viven en backend.
 3. Ejecuta `alembic upgrade head` como paso de release antes de iniciar Uvicorn.
 4. Define `NEXT_PUBLIC_API_URL` en el servicio frontend apuntando al dominio público de la API.
+5. Ejecuta `POST /api/v1/catalog/sync` con `X-Catalog-Sync-Secret` al desplegar y de forma periódica. Las búsquedas actualizan automáticamente el índice cuando supera `CATALOG_TTL_MINUTES`.
 
 Las migraciones son explícitas y no se ejecutan durante una petición HTTP.
 
