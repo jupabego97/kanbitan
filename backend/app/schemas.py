@@ -22,6 +22,7 @@ class ProductRead(SQLModel):
     barcode: str | None
     inventory_quantity: float | None
     inventory_enabled: bool
+    source_updated_at: datetime | None
     last_synced_at: datetime
     preferred_supplier_id: uuid.UUID | None
 

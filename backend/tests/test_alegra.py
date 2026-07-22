@@ -51,6 +51,41 @@ def test_items_paginates_in_batches_of_thirty(monkeypatch: pytest.MonkeyPatch) -
     assert calls == [("/items", {"limit": 30, "start": 0}), ("/items", {"limit": 30, "start": 30})]
 
 
+def test_get_page_retries_transient_transport_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(alegra_user="user@example.com", alegra_token="secret")
+    client = AlegraClient(settings)
+    attempts = 0
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict[str, int]]:
+            return [{"id": 1}]
+
+    class FakeClient:
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, *_args: object, **_kwargs: object) -> FakeResponse:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                import httpx
+
+                raise httpx.ConnectError("temporary")
+            return FakeResponse()
+
+    monkeypatch.setattr("app.alegra.httpx.AsyncClient", lambda **_kwargs: FakeClient())
+    result = asyncio.run(client._get_page("/items", {"limit": 30, "start": 0}))
+
+    assert result == [{"id": 1}]
+    assert attempts == 2
+
+
 def test_client_rejects_missing_credentials() -> None:
     with pytest.raises(AlegraError, match="ALEGRA_USER"):
         AlegraClient(Settings())

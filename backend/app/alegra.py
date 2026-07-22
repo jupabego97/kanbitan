@@ -88,20 +88,28 @@ class AlegraClient:
         self.auth = httpx.BasicAuth(settings.alegra_user, settings.alegra_token)
 
     async def _get_page(self, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-        try:
-            async with httpx.AsyncClient(
-                base_url=self.base_url,
-                auth=self.auth,
-                timeout=httpx.Timeout(20.0, connect=5.0),
-                headers={"Accept": "application/json"},
-            ) as client:
-                response = await client.get(path, params=params)
-                response.raise_for_status()
-                return _rows(response.json())
-        except httpx.HTTPStatusError as exc:
-            raise AlegraError(f"Alegra respondió HTTP {exc.response.status_code}.") from exc
-        except (httpx.HTTPError, ValueError) as exc:
-            raise AlegraError("No fue posible comunicarse con Alegra.") from exc
+        async with httpx.AsyncClient(
+            base_url=self.base_url,
+            auth=self.auth,
+            timeout=httpx.Timeout(20.0, connect=5.0),
+            headers={"Accept": "application/json"},
+        ) as client:
+            for attempt in range(2):
+                try:
+                    response = await client.get(path, params=params)
+                    response.raise_for_status()
+                    return _rows(response.json())
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code >= 500 and attempt == 0:
+                        await asyncio.sleep(0.2)
+                        continue
+                    raise AlegraError(f"Alegra respondió HTTP {exc.response.status_code}.") from exc
+                except (httpx.HTTPError, ValueError) as exc:
+                    if attempt == 0:
+                        await asyncio.sleep(0.2)
+                        continue
+                    raise AlegraError("No fue posible comunicarse con Alegra.") from exc
+        raise AlegraError("No fue posible comunicarse con Alegra.")
 
     async def items(self) -> list[dict[str, Any]]:
         page_size = 30

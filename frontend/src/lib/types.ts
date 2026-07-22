@@ -17,6 +17,7 @@ export type Product = {
   barcode: string | null;
   inventory_quantity: number | null;
   inventory_enabled: boolean;
+  source_updated_at: string | null;
   last_synced_at: string;
   preferred_supplier_id: string | null;
 };
