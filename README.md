@@ -51,7 +51,7 @@ En Railway:
 
 1. Crea un servicio PostgreSQL y un servicio para `backend/`.
 2. Define `ENVIRONMENT=production`, `DATABASE_URL`, `FRONTEND_ORIGIN`, `ALEGRA_USER`, `ALEGRA_TOKEN` y `CATALOG_SYNC_SECRET` en el servicio API. Las credenciales de Alegra sólo viven en backend.
-3. Ejecuta `alembic upgrade head` como paso de release antes de iniciar Uvicorn.
+3. Ejecuta `alembic upgrade head` como paso de release antes de iniciar Uvicorn. Deja el Start Command del backend vacío para usar el Dockerfile, o configúralo como `python start.py`.
 4. Define `NEXT_PUBLIC_API_URL` en el servicio frontend apuntando al dominio público de la API.
 5. Ejecuta `POST /api/v1/catalog/sync` con `X-Catalog-Sync-Secret` al desplegar y de forma periódica. Las búsquedas actualizan automáticamente el índice cuando supera `CATALOG_TTL_MINUTES`.
 
