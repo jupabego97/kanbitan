@@ -51,7 +51,7 @@ ALLOWED_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Development must be effortless; production must be migration-driven.
-    if settings.is_development:
+    if settings.is_development and settings.sqlalchemy_database_url.startswith("sqlite"):
         create_development_schema()
         with Session(engine) as session:
             seed_development_data(session)
