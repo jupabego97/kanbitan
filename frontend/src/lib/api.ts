@@ -27,8 +27,8 @@ export async function getSuppliers() {
   return apiFetch<Supplier[]>("/api/v1/suppliers");
 }
 
-export async function getProducts(query: string) {
-  return apiFetch<Product[]>(`/api/v1/catalog/search?query=${encodeURIComponent(query)}`);
+export async function getProducts(query: string, offset = 0, limit = 20) {
+  return apiFetch<Product[]>(`/api/v1/catalog/search?query=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`);
 }
 
 export async function getRequests(params: { status?: RequestStatus; supplierId?: string; query?: string } = {}) {

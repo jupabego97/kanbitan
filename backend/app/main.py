@@ -163,6 +163,8 @@ def search_catalog(
     background_tasks: BackgroundTasks,
     session: SessionDependency,
     query: str = Query(default="", min_length=0, max_length=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ) -> list[Product]:
     if catalog_stale(session):
         queued = queue_catalog_sync(session)
@@ -179,7 +181,13 @@ def search_catalog(
         response.headers["X-Catalog-Stale"] = "true"
         response.headers["X-Catalog-Sync"] = "queued" if queued else "in_progress"
     term = query.strip()
-    statement = select(Product).where(Product.is_active.is_(True)).order_by(Product.name).limit(20)
+    statement = (
+        select(Product)
+        .where(Product.is_active.is_(True))
+        .order_by(Product.name)
+        .offset(offset)
+        .limit(limit)
+    )
     if term:
         normalized = term.replace(" ", "")
         pattern = f"%{term}%"

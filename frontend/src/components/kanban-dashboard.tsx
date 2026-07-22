@@ -574,12 +574,8 @@ export function KanbanDashboard() {
               <LayoutGrid className="h-[17px] w-[17px]" /> Pedidos <span className="ml-auto rounded-full bg-[#dce9ff] px-2 py-0.5 text-[10px]">{metricsForView.total_open}</span>
             </Link>
             <Link href="/" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085] transition hover:bg-[#f9fafb] hover:text-[#344054]"><Package className="h-[17px] w-[17px]" /> Mostrador</Link>
-            <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085] transition hover:bg-[#f9fafb] hover:text-[#344054]">
-              <Package className="h-[17px] w-[17px]" /> Inventario
-            </button>
-            <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085] transition hover:bg-[#f9fafb] hover:text-[#344054]">
-              <Store className="h-[17px] w-[17px]" /> Proveedores
-            </button>
+            <Link href="/inventario" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085] transition hover:bg-[#f9fafb] hover:text-[#344054]"><Package className="h-[17px] w-[17px]" /> Inventario</Link>
+            <Link href="/proveedores" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#667085] transition hover:bg-[#f9fafb] hover:text-[#344054]"><Store className="h-[17px] w-[17px]" /> Proveedores</Link>
           </nav>
 
           <p className="mt-8 px-3 text-[10px] font-bold uppercase tracking-[0.13em] text-[#98a2b3]">Vistas guardadas</p>
