@@ -5,12 +5,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.alegra import AlegraError, sync_catalog
+from app.alegra import sync_catalog
 from app.core.config import get_settings
 from app.db import create_development_schema, engine, get_session
 from app.models import (
@@ -110,27 +110,39 @@ def catalog_stale(session: Session) -> bool:
     return datetime.now(UTC) - state.last_success_at > timedelta(minutes=max(settings.catalog_ttl_minutes, 1))
 
 
-def sync_if_needed(session: Session) -> tuple[bool, str | None]:
-    if not catalog_stale(session):
-        return False, None
-    try:
-        sync_catalog_sync(session)
-        return True, None
-    except AlegraError as exc:
-        if not settings.alegra_configured:
-            raise HTTPException(
-                status_code=503,
-                detail={"code": "catalog_unavailable", "message": str(exc)},
-            ) from exc
-        if session.exec(select(Product).where(Product.is_active.is_(True))).first() is not None:
-            return False, str(exc)
-        raise HTTPException(status_code=503, detail={"code": "catalog_unavailable", "message": str(exc)}) from exc
-
-
 def sync_catalog_sync(session: Session) -> dict:
     import asyncio
 
     return asyncio.run(sync_catalog(session, settings))
+
+
+def queue_catalog_sync(session: Session) -> bool:
+    state = session.get(CatalogSyncState, 1) or CatalogSyncState(id=1)
+    if state.status in {"queued", "syncing"}:
+        return False
+    state.status = "queued"
+    state.last_attempt_at = datetime.now(UTC)
+    state.last_error = None
+    session.add(state)
+    session.commit()
+    return True
+
+
+def run_catalog_sync_job() -> None:
+    with Session(engine) as session:
+        try:
+            sync_catalog_sync(session)
+        except Exception:
+            # The sync service records expected Alegra errors itself. This guard also
+            # prevents a database/network surprise from leaving the state as "syncing".
+            session.rollback()
+            state = session.get(CatalogSyncState, 1) or CatalogSyncState(id=1)
+            if state.status != "error":
+                state.status = "error"
+                state.last_attempt_at = datetime.now(UTC)
+                state.last_error = "Error interno durante la sincronización del catálogo."
+            session.add(state)
+            session.commit()
 
 
 @app.get("/health")
@@ -148,13 +160,24 @@ def list_suppliers(session: SessionDependency) -> list[Supplier]:
 @app.get("/api/v1/catalog/search", response_model=list[ProductRead])
 def search_catalog(
     response: Response,
+    background_tasks: BackgroundTasks,
     session: SessionDependency,
     query: str = Query(default="", min_length=0, max_length=100),
 ) -> list[Product]:
-    _, sync_error = sync_if_needed(session)
-    if sync_error:
+    if catalog_stale(session):
+        queued = queue_catalog_sync(session)
+        if queued:
+            background_tasks.add_task(run_catalog_sync_job)
+        if session.exec(select(Product).where(Product.is_active.is_(True))).first() is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "catalog_sync_pending",
+                    "message": "El catálogo se está sincronizando. Intenta de nuevo en unos segundos.",
+                },
+            )
         response.headers["X-Catalog-Stale"] = "true"
-        response.headers["X-Catalog-Error"] = sync_error[:160]
+        response.headers["X-Catalog-Sync"] = "queued" if queued else "in_progress"
     term = query.strip()
     statement = select(Product).where(Product.is_active.is_(True)).order_by(Product.name).limit(20)
     if term:
@@ -171,6 +194,7 @@ def search_catalog(
 
 @app.post("/api/v1/catalog/sync", response_model=CatalogSyncRead)
 def trigger_catalog_sync(
+    background_tasks: BackgroundTasks,
     session: SessionDependency,
     x_catalog_sync_secret: str | None = Header(default=None),
 ) -> CatalogSyncRead:
@@ -178,11 +202,37 @@ def trigger_catalog_sync(
         x_catalog_sync_secret, settings.catalog_sync_secret
     ):
         raise HTTPException(status_code=401, detail="Credencial de sincronización inválida.")
-    try:
-        result = sync_catalog_sync(session)
-    except AlegraError as exc:
-        raise HTTPException(status_code=502, detail={"code": "alegra_error", "message": str(exc)}) from exc
-    return CatalogSyncRead(**result)
+    queued = queue_catalog_sync(session)
+    state = session.get(CatalogSyncState, 1)
+    if queued:
+        background_tasks.add_task(run_catalog_sync_job)
+    return CatalogSyncRead(
+        status="queued" if queued else state.status,
+        item_count=state.item_count if state else 0,
+        last_success_at=state.last_success_at if state else None,
+        stale=True,
+        message=(
+            "Sincronización iniciada. Consulta GET /api/v1/catalog/sync para ver el resultado."
+            if queued
+            else "Ya hay una sincronización en curso."
+        ),
+    )
+
+
+@app.get("/api/v1/catalog/sync", response_model=CatalogSyncRead)
+def catalog_sync_status(session: SessionDependency) -> CatalogSyncRead:
+    state = session.get(CatalogSyncState, 1)
+    if state is None:
+        return CatalogSyncRead(
+            status="never_synced", item_count=0, last_success_at=None, stale=True
+        )
+    return CatalogSyncRead(
+        status=state.status,
+        item_count=state.item_count,
+        last_success_at=state.last_success_at,
+        stale=catalog_stale(session),
+        message=state.last_error,
+    )
 
 
 @app.get("/api/v1/requests", response_model=PurchaseRequestList)
