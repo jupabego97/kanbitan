@@ -2,6 +2,7 @@
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 
 revision = "20260722_0002"
@@ -12,7 +13,9 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    request_kind = sa.Enum("out_of_stock", "new_product", name="requestkind")
+    request_kind = postgresql.ENUM(
+        "out_of_stock", "new_product", name="requestkind", create_type=False
+    )
     request_kind.create(bind, checkfirst=True)
 
     op.add_column("suppliers", sa.Column("alegra_id", sa.String(length=80), nullable=True))

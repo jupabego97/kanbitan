@@ -7,6 +7,7 @@ Create Date: 2026-07-16
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "20260716_0001"
 down_revision = None
@@ -15,8 +16,24 @@ depends_on = None
 
 
 def upgrade() -> None:
-    status = sa.Enum("intake", "triage", "sourcing", "ordered", "received", "cancelled", name="requeststatus")
-    priority = sa.Enum("urgent", "high", "normal", "low", name="requestpriority")
+    status = postgresql.ENUM(
+        "intake",
+        "triage",
+        "sourcing",
+        "ordered",
+        "received",
+        "cancelled",
+        name="requeststatus",
+        create_type=False,
+    )
+    priority = postgresql.ENUM(
+        "urgent",
+        "high",
+        "normal",
+        "low",
+        name="requestpriority",
+        create_type=False,
+    )
     status.create(op.get_bind(), checkfirst=True)
     priority.create(op.get_bind(), checkfirst=True)
 
