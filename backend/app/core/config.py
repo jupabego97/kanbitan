@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     alegra_base_url: str = "https://api.alegra.com/api/v1"
     catalog_sync_secret: str = ""
     catalog_ttl_minutes: int = 15
+    catalog_sync_stale_minutes: int = 30
 
     @property
     def alegra_configured(self) -> bool:

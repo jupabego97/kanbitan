@@ -30,6 +30,7 @@ class ProductRead(SQLModel):
 class CatalogSyncRead(SQLModel):
     status: str
     item_count: int
+    last_attempt_at: datetime | None = None
     last_success_at: datetime | None
     stale: bool
     message: str | None = None

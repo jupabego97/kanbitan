@@ -163,6 +163,37 @@ class AlegraClient:
             # Contacts are helpful for supplier labels but must not prevent catalog sync.
             return result
 
+    async def bills(self) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        start = 0
+        seen_ids: set[str] = set()
+        seen_signatures: set[str] = set()
+        for _page_number in range(1_000):
+            try:
+                page = await self._get_page(
+                    "/bills", {"limit": 30, "start": start, "type": "all"}
+                )
+            except AlegraError:
+                # `all` is documented for Colombia; other country accounts may only
+                # accept the default `bill` type.
+                page = await self._get_page(
+                    "/bills", {"limit": 30, "start": start, "type": "bill"}
+                )
+            logger.info("Alegra bills page start=%s count=%s", start, len(page))
+            signature = repr(page)
+            if signature in seen_signatures:
+                break
+            seen_signatures.add(signature)
+            page_ids = {_text(row.get("id")) for row in page} - {None}
+            if page_ids and page_ids.issubset(seen_ids):
+                break
+            seen_ids.update(page_ids)
+            result.extend(page)
+            if len(page) < 30:
+                break
+            start += 30
+        return result
+
 
 def _parse_updated(row: dict[str, Any]) -> datetime | None:
     value = _text(row.get("updatedAt"), row.get("updated_at"), row.get("updateDate"))
@@ -221,6 +252,42 @@ def _sync_contacts(session: Session, rows: list[dict[str, Any]]) -> dict[str, Su
     return suppliers
 
 
+def _supplier_from_bill(row: dict[str, Any]) -> tuple[str | None, str | None]:
+    for key in ("client", "provider", "supplier", "contact"):
+        value = row.get(key)
+        if isinstance(value, dict):
+            remote_id = _text(value.get("id"), value.get("clientId"), value.get("contactId"))
+            name = _text(value.get("name"), value.get("company"), value.get("fullName"))
+            if name:
+                return remote_id, name
+        elif isinstance(value, str) and value.strip():
+            return None, value.strip()
+    return _text(row.get("client_id"), row.get("provider_id")), _text(
+        row.get("client_name"), row.get("provider_name")
+    )
+
+
+def _sync_bill_suppliers(
+    session: Session, rows: list[dict[str, Any]], suppliers: dict[str, Supplier]
+) -> None:
+    for row in rows:
+        remote_id, name = _supplier_from_bill(row)
+        if not name:
+            continue
+        supplier = suppliers.get(remote_id) if remote_id else None
+        if supplier is None:
+            supplier = session.exec(select(Supplier).where(Supplier.name == name)).first()
+        if supplier is None:
+            supplier = Supplier(alegra_id=remote_id, name=name)
+        elif remote_id and not supplier.alegra_id:
+            supplier.alegra_id = remote_id
+        supplier.name = name
+        session.add(supplier)
+        if remote_id:
+            suppliers[remote_id] = supplier
+    session.flush()
+
+
 async def sync_catalog(session: Session, settings: Settings) -> dict[str, Any]:
     state = session.get(CatalogSyncState, 1) or CatalogSyncState(id=1)
     state.status = "syncing"
@@ -231,8 +298,11 @@ async def sync_catalog(session: Session, settings: Settings) -> dict[str, Any]:
 
     try:
         client = AlegraClient(settings)
-        raw_items, contacts = await asyncio.gather(client.items(), client.contacts())
+        raw_items, contacts, bills = await asyncio.gather(
+            client.items(), client.contacts(), client.bills()
+        )
         suppliers = _sync_contacts(session, contacts)
+        _sync_bill_suppliers(session, bills, suppliers)
         synced_at = datetime.now(UTC)
         seen: set[str] = set()
         count = 0

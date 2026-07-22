@@ -119,7 +119,12 @@ def sync_catalog_sync(session: Session) -> dict:
 def queue_catalog_sync(session: Session) -> bool:
     state = session.get(CatalogSyncState, 1) or CatalogSyncState(id=1)
     if state.status in {"queued", "syncing"}:
-        return False
+        now = datetime.now(UTC)
+        started_at = state.last_attempt_at
+        if started_at is None or now - started_at < timedelta(
+            minutes=max(settings.catalog_sync_stale_minutes, 5)
+        ):
+            return False
     state.status = "queued"
     state.last_attempt_at = datetime.now(UTC)
     state.last_error = None
@@ -217,6 +222,7 @@ def trigger_catalog_sync(
     return CatalogSyncRead(
         status="queued" if queued else state.status,
         item_count=state.item_count if state else 0,
+        last_attempt_at=state.last_attempt_at if state else None,
         last_success_at=state.last_success_at if state else None,
         stale=True,
         message=(
@@ -232,11 +238,16 @@ def catalog_sync_status(session: SessionDependency) -> CatalogSyncRead:
     state = session.get(CatalogSyncState, 1)
     if state is None:
         return CatalogSyncRead(
-            status="never_synced", item_count=0, last_success_at=None, stale=True
+            status="never_synced",
+            item_count=0,
+            last_attempt_at=None,
+            last_success_at=None,
+            stale=True,
         )
     return CatalogSyncRead(
         status=state.status,
         item_count=state.item_count,
+        last_attempt_at=state.last_attempt_at,
         last_success_at=state.last_success_at,
         stale=catalog_stale(session),
         message=state.last_error,

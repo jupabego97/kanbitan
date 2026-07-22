@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from app.alegra import AlegraClient, AlegraError, normalize_item
+from app.alegra import AlegraClient, AlegraError, _supplier_from_bill, normalize_item
 from app.core.config import Settings
 
 
@@ -31,6 +31,17 @@ def test_normalize_item_prefers_explicit_barcode_and_maps_inventory() -> None:
 def test_normalize_item_skips_rows_without_identity() -> None:
     assert normalize_item({"name": "Sin id"}) is None
     assert normalize_item({"id": 1}) is None
+
+
+def test_supplier_from_bill_reads_purchase_header_client() -> None:
+    assert _supplier_from_bill({"client": {"id": 17, "name": "Proveedor Central"}}) == (
+        "17",
+        "Proveedor Central",
+    )
+    assert _supplier_from_bill({"client_id": 18, "client_name": "Otro proveedor"}) == (
+        "18",
+        "Otro proveedor",
+    )
 
 
 def test_items_paginates_in_batches_of_thirty(monkeypatch: pytest.MonkeyPatch) -> None:
