@@ -86,6 +86,19 @@ def test_get_page_retries_transient_transport_failure(monkeypatch: pytest.Monkey
     assert attempts == 2
 
 
+def test_items_rejects_a_repeated_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(alegra_user="user@example.com", alegra_token="secret")
+    client = AlegraClient(settings)
+    page = [{"id": index} for index in range(30)]
+
+    async def repeated_page(_path: str, _params: dict[str, int]) -> list[dict[str, int]]:
+        return page
+
+    monkeypatch.setattr(client, "_get_page", repeated_page)
+    with pytest.raises(AlegraError, match="paginación"):
+        asyncio.run(client.items())
+
+
 def test_client_rejects_missing_credentials() -> None:
     with pytest.raises(AlegraError, match="ALEGRA_USER"):
         AlegraClient(Settings())

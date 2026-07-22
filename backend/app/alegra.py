@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -10,6 +11,9 @@ from sqlmodel import Session, select
 
 from app.core.config import Settings
 from app.models import CatalogSyncState, Product, Supplier
+
+
+logger = logging.getLogger(__name__)
 
 
 class AlegraError(RuntimeError):
@@ -115,23 +119,46 @@ class AlegraClient:
         page_size = 30
         start = 0
         result: list[dict[str, Any]] = []
-        while True:
+        seen_ids: set[str] = set()
+        seen_signatures: set[str] = set()
+        for _page_number in range(1_000):
             page = await self._get_page("/items", {"limit": page_size, "start": start})
+            logger.info("Alegra items page start=%s count=%s", start, len(page))
+            signature = repr(page)
+            if signature in seen_signatures:
+                raise AlegraError("Alegra no avanzó la paginación de ítems.")
+            seen_signatures.add(signature)
+            page_ids = {_text(row.get("id")) for row in page} - {None}
+            if page_ids and page_ids.issubset(seen_ids):
+                raise AlegraError("Alegra devolvió una página de ítems repetida.")
+            seen_ids.update(page_ids)
             result.extend(page)
             if len(page) < page_size:
                 return result
             start += page_size
+        raise AlegraError("Alegra superó el límite seguro de páginas de ítems.")
 
     async def contacts(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         start = 0
+        seen_ids: set[str] = set()
+        seen_signatures: set[str] = set()
         try:
-            while True:
+            for _page_number in range(1_000):
                 page = await self._get_page("/contacts", {"limit": 30, "start": start})
+                signature = repr(page)
+                if signature in seen_signatures:
+                    return result
+                seen_signatures.add(signature)
+                page_ids = {_text(row.get("id")) for row in page} - {None}
+                if page_ids and page_ids.issubset(seen_ids):
+                    return result
+                seen_ids.update(page_ids)
                 result.extend(page)
                 if len(page) < 30:
                     return result
                 start += 30
+            return result
         except AlegraError:
             # Contacts are helpful for supplier labels but must not prevent catalog sync.
             return result
